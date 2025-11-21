@@ -1,5 +1,5 @@
 
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { Sky, Stars, Cloud } from '@react-three/drei';
 import { Airport } from './Airport';
 import { CityInstances } from './CityInstances';
@@ -20,6 +20,19 @@ const EnvironmentComponent: React.FC = () => {
       CROSS_ROADS_X.forEach(x => trafficState.current[x] = 'MAIN_GO');
   }
 
+  const clouds = useMemo(() => {
+    return [...Array(30)].map((_, i) => ({
+      position: [
+        (Math.random() - 0.5) * 4000,
+        200 + Math.random() * 200,
+        (Math.random() - 0.5) * 4000
+      ] as [number, number, number],
+      opacity: 0.3 + Math.random() * 0.3,
+      speed: 0.1 + Math.random() * 0.3,
+      seed: Math.random() * 1000
+    }));
+  }, []);
+
   return (
     <group>
       {/* --- ATMOSPHERE --- */}
@@ -27,10 +40,18 @@ const EnvironmentComponent: React.FC = () => {
       <Stars radius={300} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
       
       {/* Clouds */}
-      <Cloud opacity={0.5} speed={0.4} bounds={[50, 10, 15]} segments={20} position={[-100, 150, -200]} color="white" />
-      <Cloud opacity={0.5} speed={0.4} bounds={[50, 10, 15]} segments={20} position={[-300, 200, 100]} color="white" />
-      <Cloud opacity={0.4} speed={0.3} bounds={[100, 20, 20]} segments={30} position={[100, 300, 0]} color="white" />
-      <Cloud opacity={0.3} speed={0.2} bounds={[100, 20, 20]} segments={30} position={[-800, 250, 500]} color="#eee" />
+      {clouds.map((cloud, i) => (
+        <Cloud 
+          key={i}
+          opacity={cloud.opacity} 
+          speed={cloud.speed} 
+          bounds={[100, 20, 20]} 
+          segments={20} 
+          position={cloud.position} 
+          color="white" 
+          seed={cloud.seed}
+        />
+      ))}
 
       <ambientLight intensity={0.6} />
       <directionalLight 

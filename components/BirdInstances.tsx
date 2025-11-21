@@ -6,7 +6,7 @@ import '../types';
 
 export const BirdInstances = () => {
   const meshRef = useRef<InstancedMesh>(null);
-  const count = 150;
+  const count = 500;
   const dummy = useMemo(() => new Object3D(), []);
 
   const birds = useMemo(() => {

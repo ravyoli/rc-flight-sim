@@ -39,6 +39,7 @@ const Simulation: React.FC<{
   const rotation = useRef(new Quaternion());
   const throttle = useRef(0);
   const crashed = useRef(false);
+  const gearDeployed = useRef(true);
 
   // Helper vectors
   const forward = useRef(new Vector3());
@@ -77,6 +78,12 @@ const Simulation: React.FC<{
 
     const input = controls.current;
 
+    // --- TOGGLE GEAR ---
+    if (input.toggleGear) {
+      gearDeployed.current = !gearDeployed.current;
+      input.toggleGear = false; // Consume event
+    }
+
     // --- RESET LOGIC ---
     if (input.reset) {
       position.current.set(-50, 0.5, 0);
@@ -84,6 +91,7 @@ const Simulation: React.FC<{
       rotation.current.setFromEuler(new Euler(0, 0, 0));
       throttle.current = 0;
       crashed.current = false;
+      gearDeployed.current = true;
       planeRef.current.position.copy(position.current);
       planeRef.current.rotation.setFromQuaternion(rotation.current);
       perspectiveCamera.fov = 50;
@@ -139,7 +147,11 @@ const Simulation: React.FC<{
     let dragForceVal = 0;
     if (currentSpeed > 0) {
       const rawDrag = (currentSpeed * currentSpeed) * DRAG_COEFFICIENT * airDensity;
-      const clampedDrag = Math.min(rawDrag, currentSpeed / dt); // Prevent drag from reversing velocity
+      // Add drag if gear is down
+      const gearDrag = gearDeployed.current ? 0.005 * (currentSpeed * currentSpeed) : 0;
+      
+      const totalDrag = rawDrag + gearDrag;
+      const clampedDrag = Math.min(totalDrag, currentSpeed / dt); 
       dragForceVal = clampedDrag;
       const dragDir = velocity.current.clone().normalize().negate();
       velocity.current.addScaledVector(dragDir, clampedDrag * dt);
@@ -159,25 +171,25 @@ const Simulation: React.FC<{
 
     // Collision
     if (position.current.y <= GROUND_Y) {
-      // EXTREMELY Relaxed Crash Thresholds for easier landing
-      // Can land incredibly hard (up to 18m/s vertical impact - that's 64 km/h downwards!)
+      // Crash logic
       const isFallingFast = velocity.current.y < -18.0; 
-      // Can land with extreme tilt (up to ~75 degrees)
       const isTilted = Math.abs(rotation.current.x) > 1.3 || Math.abs(rotation.current.z) > 1.3;
+      
+      // Crash if gear is not deployed and touching ground
+      const isGearUp = !gearDeployed.current;
 
-      if (isFallingFast || isTilted) {
+      if (isFallingFast || isTilted || isGearUp) {
         crashed.current = true;
         onCrash(position.current.toArray());
-        playCrash(); // Play sound
+        playCrash(); 
       } else {
         position.current.y = GROUND_Y;
         if (velocity.current.y < 0) velocity.current.y = 0;
         velocity.current.multiplyScalar(0.992);
         
-        // Auto-level plane on ground (Very Strong correction to prevent tipping)
         const currentEuler = new Euler().setFromQuaternion(rotation.current);
-        currentEuler.z *= 0.6; // Snappier upright
-        currentEuler.x *= 0.6; // Snappier upright
+        currentEuler.z *= 0.6; 
+        currentEuler.x *= 0.6; 
         rotation.current.setFromEuler(currentEuler);
       }
     }
@@ -240,6 +252,7 @@ const Simulation: React.FC<{
       altitude: position.current.y,
       distance: distance,
       crashed: crashed.current,
+      gearDeployed: gearDeployed.current,
       physics: {
         velocityVector: velocity.current.toArray(),
         liftForce: liftForceVal,
@@ -250,7 +263,7 @@ const Simulation: React.FC<{
   });
 
   return (
-    <Plane ref={planeRef} throttle={throttle.current} />
+    <Plane ref={planeRef} throttle={throttle.current} gearDeployed={gearDeployed.current} />
   );
 };
 
@@ -263,6 +276,7 @@ const App: React.FC = () => {
     altitude: 0,
     distance: 0,
     crashed: false,
+    gearDeployed: true,
     physics: {
       velocityVector: [0,0,0],
       liftForce: 0,
@@ -279,13 +293,17 @@ const App: React.FC = () => {
     rollLeft: false, rollRight: false,
     throttleUp: false, throttleDown: false,
     yawLeft: false, yawRight: false,
-    reset: false
+    reset: false,
+    toggleGear: false
   });
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent, isDown: boolean) => {
       if (e.code === 'KeyC' && isDown) {
         setCameraMode(prev => prev === 'GROUND' ? 'CHASE' : 'GROUND');
+      }
+      if (e.code === 'KeyG' && isDown) {
+        controls.current.toggleGear = true;
       }
       switch (e.code) {
         case 'ArrowUp': controls.current.pitchUp = isDown; break;
@@ -314,9 +332,13 @@ const App: React.FC = () => {
     setCrashPosition(pos);
   };
 
+  const onToggleGear = () => {
+    controls.current.toggleGear = true;
+  };
+
   return (
     <div className="w-full h-screen bg-sky-300">
-      <UI flightState={flightState} cameraMode={cameraMode} />
+      <UI flightState={flightState} cameraMode={cameraMode} onToggleGear={onToggleGear} />
       <Canvas shadows camera={{ position: [-30, 1.7, 50], fov: 50, far: 20000 }}>
         <Environment />
         {crashPosition && <Explosion position={crashPosition} />}

@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export interface FlightState {
@@ -8,6 +9,7 @@ export interface FlightState {
   altitude: number;
   distance: number; // Distance from pilot
   crashed: boolean;
+  gearDeployed: boolean;
   physics: {
     velocityVector: [number, number, number];
     liftForce: number;
@@ -26,6 +28,7 @@ export interface Controls {
   yawLeft: boolean;
   yawRight: boolean;
   reset: boolean;
+  toggleGear: boolean;
 }
 
 // Augment JSX namespace to support React Three Fiber intrinsic elements

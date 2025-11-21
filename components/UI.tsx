@@ -5,9 +5,10 @@ import { FlightState } from '../types';
 interface UIProps {
   flightState: FlightState;
   cameraMode: 'GROUND' | 'CHASE';
+  onToggleGear: () => void;
 }
 
-export const UI: React.FC<UIProps> = ({ flightState, cameraMode }) => {
+export const UI: React.FC<UIProps> = ({ flightState, cameraMode, onToggleGear }) => {
   const isFar = flightState.distance > 800 && cameraMode === 'GROUND';
 
   // Format vector for display
@@ -36,6 +37,10 @@ export const UI: React.FC<UIProps> = ({ flightState, cameraMode }) => {
               <span className={`${flightState.throttle > 90 ? 'text-red-400' : 'text-green-400'}`}>
                 {flightState.throttle.toFixed(0)}%
               </span>
+              <span className="text-gray-400">GEAR</span>
+              <span className={flightState.gearDeployed ? 'text-green-400' : 'text-red-400 font-bold'}>
+                {flightState.gearDeployed ? 'DOWN' : 'UP'}
+              </span>
             </div>
           </div>
 
@@ -61,7 +66,7 @@ export const UI: React.FC<UIProps> = ({ flightState, cameraMode }) => {
           </div>
         </div>
 
-        <div className="bg-black/40 backdrop-blur-md p-4 rounded-lg text-white text-xs font-sans border border-white/10 max-w-xs shadow-xl">
+        <div className="bg-black/40 backdrop-blur-md p-4 rounded-lg text-white text-xs font-sans border border-white/10 max-w-xs shadow-xl pointer-events-auto">
           <h3 className="font-bold text-yellow-400 mb-2">CONTROLS</h3>
           <ul className="space-y-1">
             <li className="flex justify-between"><span>↑ / ↓</span> <span>Pitch (Nose Up/Down)</span></li>
@@ -71,6 +76,19 @@ export const UI: React.FC<UIProps> = ({ flightState, cameraMode }) => {
             <li className="flex justify-between"><span>C</span> <span>Switch Camera</span></li>
             <li className="flex justify-between"><span>SPACE</span> <span>Reset Plane</span></li>
           </ul>
+          
+          <div className="mt-4 pt-4 border-t border-white/10">
+            <button 
+              onClick={onToggleGear}
+              className={`w-full py-2 px-4 rounded font-bold transition-colors duration-200 flex justify-between items-center
+                ${flightState.gearDeployed 
+                  ? 'bg-green-600 hover:bg-green-500 text-white' 
+                  : 'bg-red-600 hover:bg-red-500 text-white'}`}
+            >
+              <span>TOGGLE GEAR (G)</span>
+              <span className="text-xs opacity-80">{flightState.gearDeployed ? 'OPEN' : 'FOLDED'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -92,7 +110,7 @@ export const UI: React.FC<UIProps> = ({ flightState, cameraMode }) => {
       {/* Bottom Status */}
       <div className="flex justify-between items-end text-white/60 text-xs">
         <div>Pilot Position: Beach Station 1</div>
-        <div>v1.3.0 | Telemetry Update</div>
+        <div>v1.4.0 | Gear Update</div>
       </div>
     </div>
   );

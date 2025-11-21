@@ -1,21 +1,46 @@
 
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group } from 'three';
+import { Group, MathUtils } from 'three';
 import '../types';
 
 interface PlaneProps {
   throttle: number;
+  gearDeployed: boolean;
 }
 
-export const Plane = React.forwardRef<Group, PlaneProps>(({ throttle }, ref) => {
+export const Plane = React.forwardRef<Group, PlaneProps>(({ throttle, gearDeployed }, ref) => {
   const propRef = useRef<Group>(null);
+  const gearRef = useRef<Group>(null);
+  const rearGearRef = useRef<Group>(null);
+  
+  // Animation state for gear (0 = retracted, 1 = deployed)
+  const gearAnim = useRef(1);
 
   useFrame((state, delta) => {
     if (propRef.current) {
       // Spin propeller based on throttle
       const speed = 10 + (throttle * 0.5);
       propRef.current.rotation.z += speed * delta;
+    }
+
+    // Animate Gear
+    const target = gearDeployed ? 1 : 0;
+    gearAnim.current = MathUtils.lerp(gearAnim.current, target, delta * 5);
+
+    if (gearRef.current) {
+      // Rotate main gear back into body (simple retraction)
+      // Pivot is roughly at top of struts. 
+      // If we rotate X, it swings back/forward.
+      gearRef.current.rotation.x = MathUtils.lerp(-Math.PI / 2, 0, gearAnim.current);
+      gearRef.current.position.y = MathUtils.lerp(-0.1, -0.3, gearAnim.current);
+    }
+    
+    if (rearGearRef.current) {
+      // Scale rear wheel to hide it or move it up
+       rearGearRef.current.position.y = MathUtils.lerp(0.1, -0.1, gearAnim.current);
+       const s = MathUtils.lerp(0, 1, gearAnim.current);
+       rearGearRef.current.scale.set(s, s, s);
     }
   });
 
@@ -61,8 +86,8 @@ export const Plane = React.forwardRef<Group, PlaneProps>(({ throttle }, ref) => 
         <meshStandardMaterial color="white" />
       </mesh>
 
-      {/* Landing Gear */}
-      <group position={[0, -0.3, -0.2]}>
+      {/* Landing Gear Group */}
+      <group ref={gearRef} position={[0, -0.3, -0.2]}>
         {/* Axle */}
         <mesh position={[0, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
           <cylinderGeometry args={[0.03, 0.03, 1]} />
@@ -80,7 +105,7 @@ export const Plane = React.forwardRef<Group, PlaneProps>(({ throttle }, ref) => 
       </group>
       
       {/* Rear Wheel */}
-      <mesh position={[0, -0.1, 1.6]}>
+      <mesh ref={rearGearRef} position={[0, -0.1, 1.6]}>
          <cylinderGeometry args={[0.05, 0.05, 0.05]} />
          <meshStandardMaterial color="black" />
       </mesh>
