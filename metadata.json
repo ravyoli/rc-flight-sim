@@ -1,0 +1,5 @@
+{
+  "name": "Coastal RC Wings",
+  "description": "A relaxing 3D RC plane simulator. Fly a plane from the perspective of a pilot standing on the beach using physics-based controls.",
+  "requestFramePermissions": []
+}
