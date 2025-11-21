@@ -2,6 +2,7 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, Mesh } from 'three';
+import '../types';
 
 interface ExplosionProps {
   position: [number, number, number];

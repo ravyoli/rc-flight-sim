@@ -7,6 +7,7 @@ import { Plane } from './components/Plane';
 import { UI } from './components/UI';
 import { Explosion } from './components/Explosion';
 import { FlightState, Controls } from './types';
+import { useSound } from './hooks/useSound';
 
 // Constants for physics tuning
 const GRAVITY = 9.81;
@@ -27,6 +28,9 @@ const Simulation: React.FC<{
   const planeRef = useRef<any>(null);
   const { camera } = useThree();
   const perspectiveCamera = camera as PerspectiveCamera;
+  
+  // Audio Hook
+  const { init: initSound, update: updateSound, playCrash } = useSound();
 
   // Physics State
   // Spawn on the new runway at x=-50
@@ -49,6 +53,17 @@ const Simulation: React.FC<{
     camera.position.copy(pilotPos.current);
     camera.lookAt(position.current);
   }, [camera]);
+
+  // Initialize sound on first interaction
+  useEffect(() => {
+    const handleInter = () => initSound();
+    window.addEventListener('keydown', handleInter);
+    window.addEventListener('mousedown', handleInter);
+    return () => {
+      window.removeEventListener('keydown', handleInter);
+      window.removeEventListener('mousedown', handleInter);
+    }
+  }, [initSound]);
 
   useFrame((state, delta) => {
     if (!planeRef.current) return;
@@ -73,6 +88,9 @@ const Simulation: React.FC<{
       planeRef.current.rotation.setFromQuaternion(rotation.current);
       perspectiveCamera.fov = 50;
       perspectiveCamera.updateProjectionMatrix();
+      
+      // Reset Sound
+      updateSound(0, 0, false);
       return;
     }
 
@@ -141,20 +159,25 @@ const Simulation: React.FC<{
 
     // Collision
     if (position.current.y <= GROUND_Y) {
-      const isFallingFast = velocity.current.y < -4.0;
-      const isTilted = Math.abs(rotation.current.x) > 0.5 || Math.abs(rotation.current.z) > 0.5;
+      // EXTREMELY Relaxed Crash Thresholds for easier landing
+      // Can land incredibly hard (up to 18m/s vertical impact - that's 64 km/h downwards!)
+      const isFallingFast = velocity.current.y < -18.0; 
+      // Can land with extreme tilt (up to ~75 degrees)
+      const isTilted = Math.abs(rotation.current.x) > 1.3 || Math.abs(rotation.current.z) > 1.3;
 
       if (isFallingFast || isTilted) {
         crashed.current = true;
         onCrash(position.current.toArray());
+        playCrash(); // Play sound
       } else {
         position.current.y = GROUND_Y;
         if (velocity.current.y < 0) velocity.current.y = 0;
         velocity.current.multiplyScalar(0.992);
         
+        // Auto-level plane on ground (Very Strong correction to prevent tipping)
         const currentEuler = new Euler().setFromQuaternion(rotation.current);
-        currentEuler.z *= 0.9;
-        currentEuler.x *= 0.9;
+        currentEuler.z *= 0.6; // Snappier upright
+        currentEuler.x *= 0.6; // Snappier upright
         rotation.current.setFromEuler(currentEuler);
       }
     }
@@ -163,6 +186,9 @@ const Simulation: React.FC<{
 
     planeRef.current.position.copy(position.current);
     planeRef.current.rotation.setFromQuaternion(rotation.current);
+
+    // --- AUDIO UPDATE ---
+    updateSound(throttle.current, currentSpeed, crashed.current);
 
     // --- CAMERA LOGIC ---
     if (cameraMode === 'GROUND') {
@@ -245,7 +271,7 @@ const App: React.FC = () => {
     }
   });
   
-  const [cameraMode, setCameraMode] = useState<'GROUND' | 'CHASE'>('GROUND');
+  const [cameraMode, setCameraMode] = useState<'GROUND' | 'CHASE'>('CHASE');
   const [crashPosition, setCrashPosition] = useState<[number, number, number] | null>(null);
 
   const controls = useRef<Controls>({

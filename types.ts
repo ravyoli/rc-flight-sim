@@ -1,3 +1,4 @@
+import React from 'react';
 
 export interface FlightState {
   position: [number, number, number];
@@ -25,4 +26,24 @@ export interface Controls {
   yawLeft: boolean;
   yawRight: boolean;
   reset: boolean;
+}
+
+// Augment JSX namespace to support React Three Fiber intrinsic elements
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      group: any;
+      mesh: any;
+      boxGeometry: any;
+      meshStandardMaterial: any;
+      cylinderGeometry: any;
+      coneGeometry: any;
+      planeGeometry: any;
+      instancedMesh: any;
+      ambientLight: any;
+      directionalLight: any;
+      sphereGeometry: any;
+      dodecahedronGeometry: any;
+    }
+  }
 }
