@@ -20,8 +20,8 @@ const CROSS_ROAD_Z_END = 2000;
 
 interface CarData {
   position: Vector3;
-  velocity: Vector3; // Current actual velocity vector
-  baseSpeed: number; // The cruising speed of this car
+  velocity: Vector3; 
+  baseSpeed: number; 
   rotation: Euler;
   axis: 'x' | 'z';
   laneOffset: number;
@@ -56,7 +56,9 @@ export const CarInstances: React.FC<CarInstancesProps> = ({ trafficState }) => {
         laneOffset = dir === 1 ? 10 : -10; 
         
         const xPos = MAIN_ROAD_X_START + Math.random() * (MAIN_ROAD_X_END - MAIN_ROAD_X_START);
-        pos.set(xPos, 0.75, MAIN_ROAD_Z + laneOffset);
+        // Main Road Height 0.4. Car Height 1.5 (Center 0.75). 
+        // Pos Y = 0.4 + 0.75 = 1.15
+        pos.set(xPos, 1.15, MAIN_ROAD_Z + laneOffset);
         vel.set(speed * dir, 0, 0);
         rot.set(0, dir === 1 ? Math.PI / 2 : -Math.PI / 2, 0);
 
@@ -66,6 +68,7 @@ export const CarInstances: React.FC<CarInstancesProps> = ({ trafficState }) => {
         laneOffset = dir === 1 ? -5 : 5;
 
         const zPos = CROSS_ROAD_Z_START + Math.random() * (CROSS_ROAD_Z_END - CROSS_ROAD_Z_START);
+        // Cross Road Height 0.0. Pos Y = 0.75
         pos.set(roadX + laneOffset, 0.75, zPos);
         vel.set(0, 0, speed * dir);
         rot.set(0, dir === 1 ? 0 : Math.PI, 0);
@@ -80,7 +83,6 @@ export const CarInstances: React.FC<CarInstancesProps> = ({ trafficState }) => {
   useFrame((state, delta) => {
     if (!meshRef.current) return;
 
-    // Init colors hack
     if (!meshRef.current.userData.colorsSet) {
        const carColors = [
         new Color('#ef4444'), new Color('#3b82f6'), new Color('#eab308'),
@@ -94,51 +96,41 @@ export const CarInstances: React.FC<CarInstancesProps> = ({ trafficState }) => {
     }
 
     cars.forEach((car, i) => {
-      // Traffic Logic
       let targetSpeed = car.baseSpeed;
-
-      // Find nearest intersection
-      // If we are approaching an intersection, check lights
-      
-      let distanceToStop = 9999;
       let shouldStop = false;
 
       if (car.axis === 'x') {
-        // On Main Road
-        // Find closest X intersection
-        // Direction matter: If vel.x > 0, look for intersections > car.x
+        // Main Road Cars
         const dir = car.velocity.x >= 0 ? 1 : -1;
-        
         for (let ix of CROSS_ROADS_X) {
             const dist = (ix - car.position.x) * dir;
-            // Logic: Intersection is ahead (dist > 0) and close (dist < 40)
-            // Also ensure we haven't passed the stop line (dist > 15)
-            if (dist > 10 && dist < 60) {
-                // Check Light
+            // Stop line logic:
+            // Intersection is at 'ix'. Width is 20 total.
+            // Stop line is roughly at 15.
+            // Check if car is approaching (dist > 0) and within range (dist < 50)
+            // dist > 18 to prevent stopping INSIDE the intersection if light changes late.
+            if (dist > 18 && dist < 50) {
                 const light = trafficState.current[ix] || 'MAIN_GO';
-                if (light === 'CROSS_GO') {
+                // If Light is CROSS_GO, Main is RED. Stop.
+                if (light === 'CROSS_GO') { 
                     shouldStop = true;
-                    distanceToStop = dist;
                 }
-                break; // Only care about the immediate next one
+                break; 
             }
         }
       } else {
-         // On Cross Road (Z axis)
-         // Approaching Z=0
+         // Cross Road Cars
          const dir = car.velocity.z >= 0 ? 1 : -1;
          const dist = (MAIN_ROAD_Z - car.position.z) * dir;
          
-         if (dist > 10 && dist < 60) {
-             // Use the X coordinate of this cross road to lookup state
-             // We need to find which cross road we are on.
-             // Approximate check
+         // Main road width is 40. Stop at ~25.
+         if (dist > 25 && dist < 55) {
              const roadX = CROSS_ROADS_X.find(rx => Math.abs(rx - car.position.x) < 10);
              if (roadX) {
                  const light = trafficState.current[roadX] || 'MAIN_GO';
+                 // If Light is MAIN_GO, Cross is RED. Stop.
                  if (light === 'MAIN_GO') {
                      shouldStop = true;
-                     distanceToStop = dist;
                  }
              }
          }
@@ -148,34 +140,18 @@ export const CarInstances: React.FC<CarInstancesProps> = ({ trafficState }) => {
           targetSpeed = 0;
       }
 
-      // Accelerate/Brake physics
       const currentSpeed = car.velocity.length();
       const newSpeed = MathUtils.lerp(currentSpeed, targetSpeed, delta * 2);
       
       if (car.axis === 'x') {
-          car.velocity.set(Math.sign(car.velocity.x || 1) * newSpeed, 0, 0); // Keep direction
-          // Fix direction flip issue if speed hits 0
-          if (currentSpeed < 0.1 && targetSpeed > 1) {
-               // Restarting
-               // We lost direction if vel is 0, need to infer from position limits or stored dir?
-               // Simplified: we initialized cars with direction, but velocity is vector.
-               // If velocity is 0, we can't normalize. 
-               // Solution: Don't modify velocity vector directly, keep a direction scalar in data.
-          }
-          // Hack: Just re-apply direction based on logic below (wrap around logic infers dir)
-          // Actually, let's just trust the sign of X doesn't flip because we clamp > 0?
-          // No, velocity can be negative.
-          // If velocity becomes 0, Math.sign(0) is 0 or 1.
-          // Let's just scale the existing normalized velocity?
+          car.velocity.set(Math.sign(car.velocity.x || 1) * newSpeed, 0, 0);
       } else {
-          // Same for Z
           car.velocity.set(0, 0, Math.sign(car.velocity.z || 1) * newSpeed);
       }
 
-      // Apply Velocity
       car.position.addScaledVector(car.velocity, delta);
 
-      // Wrap Around Logic (Reset speed when respawning)
+      // Reset Loop
       if (car.axis === 'x') {
          if (car.velocity.x > 0 && car.position.x > MAIN_ROAD_X_START) {
             car.position.x = MAIN_ROAD_X_END;
@@ -196,7 +172,6 @@ export const CarInstances: React.FC<CarInstancesProps> = ({ trafficState }) => {
          }
       }
 
-      // Update Matrix
       dummy.position.copy(car.position);
       dummy.rotation.copy(car.rotation);
       dummy.updateMatrix();

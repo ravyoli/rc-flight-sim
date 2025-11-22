@@ -1,5 +1,6 @@
-
 import React from 'react';
+
+export type PlaneType = 'SMALL' | 'BOEING_737';
 
 export interface FlightState {
   position: [number, number, number];
@@ -32,6 +33,9 @@ export interface Controls {
 }
 
 // Augment JSX namespace to support React Three Fiber intrinsic elements
+// We augment both the global JSX namespace and the React module JSX namespace
+// to ensure compatibility with different TypeScript and React type definitions.
+
 declare global {
   namespace JSX {
     interface IntrinsicElements {
@@ -47,6 +51,27 @@ declare global {
       directionalLight: any;
       sphereGeometry: any;
       dodecahedronGeometry: any;
+      circleGeometry: any;
+    }
+  }
+}
+
+declare module 'react' {
+  namespace JSX {
+    interface IntrinsicElements {
+      group: any;
+      mesh: any;
+      boxGeometry: any;
+      meshStandardMaterial: any;
+      cylinderGeometry: any;
+      coneGeometry: any;
+      planeGeometry: any;
+      instancedMesh: any;
+      ambientLight: any;
+      directionalLight: any;
+      sphereGeometry: any;
+      dodecahedronGeometry: any;
+      circleGeometry: any;
     }
   }
 }

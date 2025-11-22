@@ -1,61 +1,66 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Vector3, Quaternion, Euler, MathUtils, PerspectiveCamera } from 'three';
+import { Vector3, MathUtils, PerspectiveCamera, Euler } from 'three';
 import { Environment } from './components/Environment';
 import { Plane } from './components/Plane';
+import { Boeing737 } from './components/Boeing737';
 import { UI } from './components/UI';
 import { Explosion } from './components/Explosion';
-import { FlightState, Controls } from './types';
+import { FlightState, PlaneType } from './types';
 import { useSound } from './hooks/useSound';
-
-// Constants for physics tuning
-const GRAVITY = 9.81;
-const LIFT_COEFFICIENT = 0.5; 
-const DRAG_COEFFICIENT = 0.02;
-const SIDE_DRAG_COEFFICIENT = 1.0;
-const THRUST_POWER = 50.0;
-const ROTATION_SPEED = 1.2;
-const MAX_SPEED = 60.0;
-const GROUND_Y = 0.1;
+import { getCityBuildings, BuildingData } from './components/CityInstances';
+import { InputManager } from './utils/InputManager';
+import { PhysicsEngine } from './utils/PhysicsEngine';
+import { PLANE_CONFIGS } from './constants';
 
 const Simulation: React.FC<{ 
   setFlightState: (state: FlightState) => void, 
-  controls: React.MutableRefObject<Controls>,
+  inputManager: InputManager,
   cameraMode: 'GROUND' | 'CHASE',
-  onCrash: (pos: [number, number, number]) => void
-}> = ({ setFlightState, controls, cameraMode, onCrash }) => {
+  onCrash: (pos: [number, number, number]) => void,
+  planeType: PlaneType,
+  resetKey: number
+}> = ({ setFlightState, inputManager, cameraMode, onCrash, planeType, resetKey }) => {
   const planeRef = useRef<any>(null);
   const { camera } = useThree();
   const perspectiveCamera = camera as PerspectiveCamera;
   
-  // Audio Hook
   const { init: initSound, update: updateSound, playCrash } = useSound();
+  const pilotPos = useRef(new Vector3(-30, 0, 50));
+  const physics = useMemo(() => new PhysicsEngine(), []);
 
-  // Physics State
-  // Spawn on the new runway at x=-50
-  const position = useRef(new Vector3(-50, 0.5, 0));
-  const velocity = useRef(new Vector3(0, 0, 0));
-  const rotation = useRef(new Quaternion());
-  const throttle = useRef(0);
-  const crashed = useRef(false);
-  const gearDeployed = useRef(true);
+  const config = PLANE_CONFIGS[planeType];
 
-  // Helper vectors
-  const forward = useRef(new Vector3());
-  const up = useRef(new Vector3());
-  const right = useRef(new Vector3());
-  const euler = useRef(new Euler());
-  
-  // Pilot stands on the grass near the runway (X=-30)
-  const pilotPos = useRef(new Vector3(-30, 1.7, 50));
+  // Reset when plane type or key changes
+  useEffect(() => {
+    const startPos = new Vector3(-50, config.minAltitude, 0);
+    physics.reset(startPos, config.minAltitude);
+    
+    if (planeRef.current) {
+       planeRef.current.position.copy(physics.position);
+       planeRef.current.rotation.setFromQuaternion(physics.rotation);
+    }
+  }, [planeType, resetKey, config.minAltitude, physics]);
+
+  const buildingGrid = useMemo(() => {
+      const grid = new Map<string, BuildingData[]>();
+      const cellSize = 200;
+      const buildings = getCityBuildings();
+      
+      buildings.forEach(b => {
+          const k = `${Math.floor(b.x / cellSize)},${Math.floor(b.z / cellSize)}`;
+          if (!grid.has(k)) grid.set(k, []);
+          grid.get(k)!.push(b);
+      });
+      return { grid, cellSize };
+  }, []);
 
   useEffect(() => {
     camera.position.copy(pilotPos.current);
-    camera.lookAt(position.current);
-  }, [camera]);
+    camera.lookAt(physics.position);
+  }, [camera, physics.position]);
 
-  // Initialize sound on first interaction
   useEffect(() => {
     const handleInter = () => initSound();
     window.addEventListener('keydown', handleInter);
@@ -69,143 +74,36 @@ const Simulation: React.FC<{
   useFrame((state, delta) => {
     if (!planeRef.current) return;
 
-    let dt = delta;
-    if (dt > 0.1) dt = 0.1; 
+    if (isNaN(physics.position.x)) {
+        // Emergency reset if physics explodes
+        const startPos = new Vector3(-50, config.minAltitude, 0);
+        physics.reset(startPos, config.minAltitude);
+    }
+
+    const controls = inputManager.controls;
     
-    if (isNaN(position.current.x) || isNaN(velocity.current.x)) {
-       controls.current.reset = true;
-    }
-
-    const input = controls.current;
-
-    // --- TOGGLE GEAR ---
-    if (input.toggleGear) {
-      gearDeployed.current = !gearDeployed.current;
-      input.toggleGear = false; // Consume event
-    }
-
-    // --- RESET LOGIC ---
-    if (input.reset) {
-      position.current.set(-50, 0.5, 0);
-      velocity.current.set(0, 0, 0);
-      rotation.current.setFromEuler(new Euler(0, 0, 0));
-      throttle.current = 0;
-      crashed.current = false;
-      gearDeployed.current = true;
-      planeRef.current.position.copy(position.current);
-      planeRef.current.rotation.setFromQuaternion(rotation.current);
-      perspectiveCamera.fov = 50;
-      perspectiveCamera.updateProjectionMatrix();
-      
-      // Reset Sound
-      updateSound(0, 0, false);
-      return;
-    }
-
-    if (crashed.current) return;
-
-    // --- INPUT PROCESSING ---
-    if (input.throttleUp) throttle.current = Math.min(throttle.current + 80 * dt, 100);
-    if (input.throttleDown) throttle.current = Math.max(throttle.current - 80 * dt, 0);
-
-    forward.current.set(0, 0, -1).applyQuaternion(rotation.current);
-    up.current.set(0, 1, 0).applyQuaternion(rotation.current);
-    right.current.set(1, 0, 0).applyQuaternion(rotation.current);
-
-    const currentSpeed = velocity.current.length();
-    const distance = position.current.distanceTo(pilotPos.current);
-
-    const altitude = position.current.y;
-    const airDensity = Math.max(0.2, 1.0 - (altitude / 500)); 
-
-    const controlAuthority = Math.min(currentSpeed / 10, 1.5) * airDensity + (throttle.current / 200);
+    // --- UPDATE PHYSICS ---
+    physics.update(delta, controls, config);
     
-    const pitchInput = (input.pitchDown ? 1 : 0) - (input.pitchUp ? 1 : 0);
-    const rollInput = (input.rollRight ? -1 : 0) - (input.rollLeft ? -1 : 0);
-    const yawInput = (input.yawLeft ? 1 : 0) - (input.yawRight ? 1 : 0);
+    // --- CHECK COLLISIONS ---
+    const hasCrashed = physics.checkCollisions(config, buildingGrid, onCrash, planeType);
+    if (hasCrashed) {
+        playCrash();
+    }
 
-    const rotDelta = dt * ROTATION_SPEED * controlAuthority;
+    // --- UPDATE VISUALS ---
+    planeRef.current.position.copy(physics.position);
+    planeRef.current.rotation.setFromQuaternion(physics.rotation);
+
+    // --- UPDATE SOUND ---
+    updateSound(Math.abs(physics.throttle), physics.velocity.length(), physics.crashed);
+
+    // --- UPDATE CAMERA ---
+    const distance = physics.position.distanceTo(pilotPos.current);
     
-    const qPitch = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), pitchInput * rotDelta);
-    const qYaw = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), yawInput * rotDelta * 0.6);
-    const qRoll = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), rollInput * rotDelta * 1.8); 
-
-    rotation.current.multiply(qPitch).multiply(qYaw).multiply(qRoll);
-    rotation.current.normalize();
-
-    // --- LINEAR PHYSICS ---
-    velocity.current.y -= GRAVITY * dt;
-
-    const thrustForceVal = (throttle.current / 100) * THRUST_POWER * airDensity;
-    const thrustVector = forward.current.clone().multiplyScalar(thrustForceVal);
-    velocity.current.addScaledVector(thrustVector, dt);
-
-    const liftForceVal = currentSpeed * LIFT_COEFFICIENT * airDensity;
-    const liftVector = up.current.clone().multiplyScalar(liftForceVal);
-    velocity.current.addScaledVector(liftVector, dt);
-
-    let dragForceVal = 0;
-    if (currentSpeed > 0) {
-      const rawDrag = (currentSpeed * currentSpeed) * DRAG_COEFFICIENT * airDensity;
-      // Add drag if gear is down
-      const gearDrag = gearDeployed.current ? 0.005 * (currentSpeed * currentSpeed) : 0;
-      
-      const totalDrag = rawDrag + gearDrag;
-      const clampedDrag = Math.min(totalDrag, currentSpeed / dt); 
-      dragForceVal = clampedDrag;
-      const dragDir = velocity.current.clone().normalize().negate();
-      velocity.current.addScaledVector(dragDir, clampedDrag * dt);
-    }
-
-    const inverseRotation = rotation.current.clone().invert();
-    const localVelocity = velocity.current.clone().applyQuaternion(inverseRotation);
-    if (Math.abs(localVelocity.x) > 0.01) {
-        const sideDrag = -localVelocity.x * currentSpeed * SIDE_DRAG_COEFFICIENT * dt * airDensity;
-        const sideCorrection = new Vector3(sideDrag, 0, 0).applyQuaternion(rotation.current);
-        velocity.current.add(sideCorrection);
-    }
-    
-    if (velocity.current.length() > MAX_SPEED) {
-      velocity.current.setLength(MAX_SPEED);
-    }
-
-    // Collision
-    if (position.current.y <= GROUND_Y) {
-      // Crash logic
-      const isFallingFast = velocity.current.y < -18.0; 
-      const isTilted = Math.abs(rotation.current.x) > 1.3 || Math.abs(rotation.current.z) > 1.3;
-      
-      // Crash if gear is not deployed and touching ground
-      const isGearUp = !gearDeployed.current;
-
-      if (isFallingFast || isTilted || isGearUp) {
-        crashed.current = true;
-        onCrash(position.current.toArray());
-        playCrash(); 
-      } else {
-        position.current.y = GROUND_Y;
-        if (velocity.current.y < 0) velocity.current.y = 0;
-        velocity.current.multiplyScalar(0.992);
-        
-        const currentEuler = new Euler().setFromQuaternion(rotation.current);
-        currentEuler.z *= 0.6; 
-        currentEuler.x *= 0.6; 
-        rotation.current.setFromEuler(currentEuler);
-      }
-    }
-
-    position.current.addScaledVector(velocity.current, dt);
-
-    planeRef.current.position.copy(position.current);
-    planeRef.current.rotation.setFromQuaternion(rotation.current);
-
-    // --- AUDIO UPDATE ---
-    updateSound(throttle.current, currentSpeed, crashed.current);
-
-    // --- CAMERA LOGIC ---
     if (cameraMode === 'GROUND') {
       camera.position.copy(pilotPos.current);
-      camera.lookAt(position.current);
+      camera.lookAt(physics.position);
       
       const baseFov = 50;
       const minFov = 10;
@@ -214,28 +112,28 @@ const Simulation: React.FC<{
         minFov,
         baseFov
       );
-      perspectiveCamera.fov = MathUtils.lerp(perspectiveCamera.fov, targetFov, dt * 2);
+      perspectiveCamera.fov = MathUtils.lerp(perspectiveCamera.fov, targetFov, delta * 2);
       perspectiveCamera.updateProjectionMatrix();
     } else {
       // Chase Camera
-      const heading = forward.current.clone();
-      heading.y = 0; 
-      if (heading.lengthSq() > 0.001) {
-        heading.normalize();
-      } else {
-        const currentOffset = camera.position.clone().sub(position.current);
-        currentOffset.y = 0;
-        if (currentOffset.lengthSq() > 0.1) heading.copy(currentOffset).normalize().negate();
-        else heading.set(0, 0, 1);
-      }
+      const heading = physics.velocity.clone().normalize();
+      if (heading.lengthSq() < 0.001) heading.set(0, 0, -1).applyQuaternion(physics.rotation);
+      // Fallback if vertical
+      if (Math.abs(heading.y) > 0.9) heading.set(0, 0, -1).applyQuaternion(physics.rotation);
+      heading.y = 0;
+      heading.normalize();
 
-      const targetCamPos = position.current.clone()
-        .sub(heading.multiplyScalar(12))
-        .add(new Vector3(0, 6, 0));
+      const chaseDist = planeType === 'BOEING_737' ? 30 : 12;
+      const chaseHeight = planeType === 'BOEING_737' ? 10 : 6;
 
-      camera.position.lerp(targetCamPos, dt * 5);
+      const targetCamPos = physics.position.clone()
+        .sub(heading.multiplyScalar(chaseDist))
+        .add(new Vector3(0, chaseHeight, 0));
+
+      camera.position.lerp(targetCamPos, delta * 5);
       
-      const lookAtPoint = position.current.clone().add(forward.current.clone().multiplyScalar(5));
+      // Look a bit ahead of the plane
+      const lookAtPoint = physics.position.clone().add(physics.velocity.clone().normalize().multiplyScalar(20));
       camera.lookAt(lookAtPoint);
 
       if (perspectiveCamera.fov !== 60) {
@@ -244,26 +142,33 @@ const Simulation: React.FC<{
       }
     }
 
+    // --- SYNC STATE TO UI ---
     setFlightState({
-      position: position.current.toArray(),
-      rotation: [euler.current.x, euler.current.y, euler.current.z],
-      speed: velocity.current.length(),
-      throttle: throttle.current,
-      altitude: position.current.y,
+      position: physics.position.toArray(),
+      rotation: new Euler().setFromQuaternion(physics.rotation).toArray() as [number, number, number],
+      speed: physics.velocity.length(),
+      throttle: physics.throttle,
+      altitude: physics.position.y,
       distance: distance,
-      crashed: crashed.current,
-      gearDeployed: gearDeployed.current,
+      crashed: physics.crashed,
+      gearDeployed: physics.gearDeployed,
       physics: {
-        velocityVector: velocity.current.toArray(),
-        liftForce: liftForceVal,
-        dragForce: dragForceVal,
-        thrustForce: thrustForceVal
+        velocityVector: physics.velocity.toArray(),
+        liftForce: physics.liftForce,
+        dragForce: physics.dragForce,
+        thrustForce: physics.thrustForce
       }
     });
   });
 
   return (
-    <Plane ref={planeRef} throttle={throttle.current} gearDeployed={gearDeployed.current} />
+    <>
+      {planeType === 'SMALL' ? (
+        <Plane key={resetKey} ref={planeRef} throttle={physics.throttle} gearDeployed={physics.gearDeployed} />
+      ) : (
+        <Boeing737 key={resetKey} ref={planeRef} throttle={physics.throttle} gearDeployed={physics.gearDeployed} />
+      )}
+    </>
   );
 };
 
@@ -286,67 +191,61 @@ const App: React.FC = () => {
   });
   
   const [cameraMode, setCameraMode] = useState<'GROUND' | 'CHASE'>('CHASE');
+  const [planeType, setPlaneType] = useState<PlaneType>('SMALL');
   const [crashPosition, setCrashPosition] = useState<[number, number, number] | null>(null);
+  const [resetKey, setResetKey] = useState(0);
 
-  const controls = useRef<Controls>({
-    pitchUp: false, pitchDown: false,
-    rollLeft: false, rollRight: false,
-    throttleUp: false, throttleDown: false,
-    yawLeft: false, yawRight: false,
-    reset: false,
-    toggleGear: false
-  });
+  // Initialize Input Manager
+  const inputManager = useMemo(() => new InputManager(), []);
 
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent, isDown: boolean) => {
-      if (e.code === 'KeyC' && isDown) {
+    return () => inputManager.dispose();
+  }, [inputManager]);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.code === 'KeyC') {
         setCameraMode(prev => prev === 'GROUND' ? 'CHASE' : 'GROUND');
       }
-      if (e.code === 'KeyG' && isDown) {
-        controls.current.toggleGear = true;
-      }
-      switch (e.code) {
-        case 'ArrowUp': controls.current.pitchUp = isDown; break;
-        case 'ArrowDown': controls.current.pitchDown = isDown; break;
-        case 'ArrowLeft': controls.current.rollLeft = isDown; break;
-        case 'ArrowRight': controls.current.rollRight = isDown; break;
-        case 'KeyW': controls.current.throttleUp = isDown; break;
-        case 'KeyS': controls.current.throttleDown = isDown; break;
-        case 'KeyA': controls.current.yawLeft = isDown; break;
-        case 'KeyD': controls.current.yawRight = isDown; break;
-        case 'Space': 
-          controls.current.reset = isDown; 
-          if(isDown) setCrashPosition(null); 
-          break;
+      if (e.code === 'Space') {
+        setCrashPosition(null); 
+        setResetKey(p => p + 1);
+        inputManager.controls.reset = true;
       }
     };
-    window.addEventListener('keydown', (e) => handleKey(e, true));
-    window.addEventListener('keyup', (e) => handleKey(e, false));
-    return () => {
-      window.removeEventListener('keydown', (e) => handleKey(e, true));
-      window.removeEventListener('keyup', (e) => handleKey(e, false));
-    };
-  }, []);
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [inputManager]);
 
   const handleCrash = (pos: [number, number, number]) => {
     setCrashPosition(pos);
   };
 
-  const onToggleGear = () => {
-    controls.current.toggleGear = true;
+  const handleSetPlaneType = (type: PlaneType) => {
+    setPlaneType(type);
+    setCrashPosition(null);
+    setResetKey(p => p + 1);
+    inputManager.controls.reset = true; 
   };
 
   return (
     <div className="w-full h-screen bg-sky-300">
-      <UI flightState={flightState} cameraMode={cameraMode} onToggleGear={onToggleGear} />
-      <Canvas shadows camera={{ position: [-30, 1.7, 50], fov: 50, far: 20000 }}>
+      <UI 
+        flightState={flightState} 
+        cameraMode={cameraMode} 
+        planeType={planeType}
+        setPlaneType={handleSetPlaneType}
+      />
+      <Canvas shadows camera={{ position: [-30, 0, 50], fov: 50, far: 20000 }}>
         <Environment />
         {crashPosition && <Explosion position={crashPosition} />}
         <Simulation 
           setFlightState={setFlightState} 
-          controls={controls} 
+          inputManager={inputManager}
           cameraMode={cameraMode} 
-          onCrash={handleCrash}
+          onCrash={handleCrash} 
+          planeType={planeType}
+          resetKey={resetKey}
         />
       </Canvas>
     </div>

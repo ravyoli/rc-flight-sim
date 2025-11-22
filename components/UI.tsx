@@ -1,14 +1,15 @@
 
 import React from 'react';
-import { FlightState } from '../types';
+import { FlightState, PlaneType } from '../types';
 
 interface UIProps {
   flightState: FlightState;
   cameraMode: 'GROUND' | 'CHASE';
-  onToggleGear: () => void;
+  planeType: PlaneType;
+  setPlaneType: (type: PlaneType) => void;
 }
 
-export const UI: React.FC<UIProps> = ({ flightState, cameraMode, onToggleGear }) => {
+export const UI: React.FC<UIProps> = ({ flightState, cameraMode, planeType, setPlaneType }) => {
   const isFar = flightState.distance > 800 && cameraMode === 'GROUND';
 
   // Format vector for display
@@ -20,8 +21,25 @@ export const UI: React.FC<UIProps> = ({ flightState, cameraMode, onToggleGear })
       <div className="flex justify-between items-start">
         <div className="flex flex-col space-y-4">
           {/* Main Stats */}
-          <div className="bg-black/40 backdrop-blur-md p-4 rounded-lg text-white font-mono border border-white/10 shadow-xl">
-            <h1 className="text-xl font-bold text-sky-400 mb-2">RC FLIGHT SIM</h1>
+          <div className="bg-black/40 backdrop-blur-md p-4 rounded-lg text-white font-mono border border-white/10 shadow-xl pointer-events-auto">
+            <div className="flex justify-between items-center mb-4">
+               <h1 className="text-xl font-bold text-sky-400">RC FLIGHT SIM</h1>
+               <div className="flex space-x-2 text-xs">
+                  <button 
+                    onClick={() => setPlaneType('SMALL')}
+                    className={`px-3 py-1 rounded border ${planeType === 'SMALL' ? 'bg-sky-500 border-sky-400 text-white' : 'bg-black/30 border-white/20 text-gray-400 hover:bg-white/10'}`}
+                  >
+                    SPORT
+                  </button>
+                  <button 
+                    onClick={() => setPlaneType('BOEING_737')}
+                    className={`px-3 py-1 rounded border ${planeType === 'BOEING_737' ? 'bg-sky-500 border-sky-400 text-white' : 'bg-black/30 border-white/20 text-gray-400 hover:bg-white/10'}`}
+                  >
+                    BOEING 737
+                  </button>
+               </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
               <span className="text-gray-400">VIEW</span>
               <span className="font-bold text-yellow-300">{cameraMode}</span>
@@ -73,22 +91,10 @@ export const UI: React.FC<UIProps> = ({ flightState, cameraMode, onToggleGear })
             <li className="flex justify-between"><span>← / →</span> <span>Roll (Turn)</span></li>
             <li className="flex justify-between"><span>W / S</span> <span>Throttle</span></li>
             <li className="flex justify-between"><span>A / D</span> <span>Yaw (Rudder)</span></li>
+            <li className="flex justify-between"><span>G</span> <span>Toggle Landing Gear</span></li>
             <li className="flex justify-between"><span>C</span> <span>Switch Camera</span></li>
             <li className="flex justify-between"><span>SPACE</span> <span>Reset Plane</span></li>
           </ul>
-          
-          <div className="mt-4 pt-4 border-t border-white/10">
-            <button 
-              onClick={onToggleGear}
-              className={`w-full py-2 px-4 rounded font-bold transition-colors duration-200 flex justify-between items-center
-                ${flightState.gearDeployed 
-                  ? 'bg-green-600 hover:bg-green-500 text-white' 
-                  : 'bg-red-600 hover:bg-red-500 text-white'}`}
-            >
-              <span>TOGGLE GEAR (G)</span>
-              <span className="text-xs opacity-80">{flightState.gearDeployed ? 'OPEN' : 'FOLDED'}</span>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -110,7 +116,7 @@ export const UI: React.FC<UIProps> = ({ flightState, cameraMode, onToggleGear })
       {/* Bottom Status */}
       <div className="flex justify-between items-end text-white/60 text-xs">
         <div>Pilot Position: Beach Station 1</div>
-        <div>v1.4.0 | Gear Update</div>
+        <div>v1.5.1 | Multi-Plane Update</div>
       </div>
     </div>
   );

@@ -8,14 +8,20 @@ import { IslandInstances } from './IslandInstances';
 import { CarInstances } from './CarInstances';
 import { BirdInstances } from './BirdInstances';
 import { TrafficLightSystem, TrafficState } from './TrafficLightSystem';
+import { RoadMarkings } from './RoadMarkings';
 import '../types';
 
 const CROSS_ROADS_X = [ -400, -800, -1200, -1600, -2000, -2400, -2800, -3200, -3600 ];
 
+// --- NEW LAYER SYSTEM ---
+// Ocean: -10.0
+// Ground (Grass/City): -2.0
+// Cross Roads: 0.0
+// Main Road: 0.4
+// Sidewalks: 0.55
+
 const EnvironmentComponent: React.FC = () => {
-  // Initialize Traffic State (All start Green for Main Road)
   const trafficState = useRef<TrafficState>({});
-  // Set defaults once
   if (Object.keys(trafficState.current).length === 0) {
       CROSS_ROADS_X.forEach(x => trafficState.current[x] = 'MAIN_GO');
   }
@@ -39,7 +45,6 @@ const EnvironmentComponent: React.FC = () => {
       <Sky distance={450000} sunPosition={[100, 20, 100]} inclination={0} azimuth={0.25} turbidity={8} rayleigh={1.5} />
       <Stars radius={300} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
       
-      {/* Clouds */}
       {clouds.map((cloud, i) => (
         <Cloud 
           key={i}
@@ -58,6 +63,7 @@ const EnvironmentComponent: React.FC = () => {
         position={[50, 100, 50]} 
         intensity={1.5} 
         castShadow 
+        shadow-bias={-0.0005} 
         shadow-mapSize={[2048, 2048]}
         shadow-camera-left={-200}
         shadow-camera-right={200}
@@ -65,64 +71,90 @@ const EnvironmentComponent: React.FC = () => {
         shadow-camera-bottom={-200}
       />
 
-      {/* --- GROUND ZONES --- */}
+      {/* --- GROUND ZONES (Level -2.0) --- */}
       
-      {/* 1. Ocean (Far Right) - X > 100 */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[50100, -3.0, 0]}>
+      {/* 1. Ocean (Far Right) - Level -10.0 */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[50100, -10.0, 0]}>
         <planeGeometry args={[100000, 100000]} />
         <meshStandardMaterial color="#006994" roughness={0.1} metalness={0.1} />
       </mesh>
       <IslandInstances />
 
-      {/* 2. Beach (Right) - X: 0 to 100 */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[50, -0.3, 0]} receiveShadow>
+      {/* 2. Beach (Right) */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[50, -2.0, 0]} receiveShadow>
         <planeGeometry args={[100, 10000]} />
         <meshStandardMaterial color="#eab308" roughness={1} />
       </mesh>
 
-      {/* 3. Airfield 1 Buffer (Center) - X: -100 to 0 */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-50, -0.3, 0]} receiveShadow>
+      {/* 3. Airfield 1 Buffer (Center) */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-50, -2.0, 0]} receiveShadow>
         <planeGeometry args={[100, 10000]} />
         <meshStandardMaterial color="#546e44" roughness={1} />
       </mesh>
 
-      {/* 4. City Ground (Left) - X < -100 */}
-      {/* Lowered to -0.35 to prevent z-fighting with roads (-0.25) */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-50100, -0.35, 0]}>
+      {/* 4. City Ground (Left) */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-50100, -2.0, 0]} receiveShadow>
         <planeGeometry args={[100000, 100000]} />
         <meshStandardMaterial color="#777" roughness={0.9} /> 
       </mesh>
-
-      {/* --- AIRPORTS --- */}
-      <group position={[-50, -0.3, 0]}>
-        <Airport position={[0, 0, 0]} />
-      </group>
-      <group position={[-3000, -0.3, 0]}>
-          <mesh rotation={[-Math.PI/2, 0, 0]}>
+      {/* Second Airfield Ground patch */}
+       <mesh rotation={[-Math.PI/2, 0, 0]} position={[-3000, -2.0, 0]}>
              <planeGeometry args={[200, 2000]} />
              <meshStandardMaterial color="#546e44" roughness={1} />
-          </mesh>
+       </mesh>
+
+
+      {/* --- AIRPORTS --- */}
+      <group position={[-50, 0, 0]}>
+        <Airport position={[0, 0, 0]} />
+      </group>
+      <group position={[-3000, 0, 0]}>
           <Airport position={[0, 0, 0]} rotationY={Math.PI} />
       </group>
 
-      {/* --- ROADS --- */}
-      {/* Adjusted heights for proper stacking: CityGround (-0.35) < MainRoad (-0.25) < CrossRoad (-0.20) */}
+      {/* --- ROADS & SIDEWALKS --- */}
       <group position={[0, 0, 0]}> 
-        {/* Main Street (Z=0) */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-2500, -0.25, 0]}>
-            <planeGeometry args={[5000, 40]} />
-            <meshStandardMaterial color="#333" />
-        </mesh>
         
-        {/* Cross Streets */}
-        {CROSS_ROADS_X.map(x => (
-            <mesh key={x} rotation={[-Math.PI / 2, 0, 0]} position={[x, -0.20, 0]}>
-            <planeGeometry args={[20, 4000]} />
-            <meshStandardMaterial color="#333" />
+        {/* MAIN ROAD - Level 0.4 */}
+        <group>
+             {/* Tarmac */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-2500, 0.4, 0]} receiveShadow>
+                <planeGeometry args={[5000, 40]} />
+                <meshStandardMaterial color="#333" />
             </mesh>
+            {/* Sidewalks (Level 0.55) */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-2500, 0.55, 22]} receiveShadow>
+                <planeGeometry args={[5000, 4]} />
+                <meshStandardMaterial color="#9ca3af" />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-2500, 0.55, -22]} receiveShadow>
+                <planeGeometry args={[5000, 4]} />
+                <meshStandardMaterial color="#9ca3af" />
+            </mesh>
+        </group>
+        
+        {/* CROSS STREETS - Level 0.0 */}
+        {CROSS_ROADS_X.map(x => (
+            <group key={x}>
+                {/* Tarmac */}
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.0, 0]} receiveShadow>
+                    <planeGeometry args={[20, 4000]} />
+                    <meshStandardMaterial color="#333" />
+                </mesh>
+                {/* Sidewalks - Level 0.55 (Same as main sidewalks for seamless curb) */}
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[x - 12, 0.55, 0]} receiveShadow>
+                    <planeGeometry args={[4, 4000]} />
+                    <meshStandardMaterial color="#9ca3af" />
+                </mesh>
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[x + 12, 0.55, 0]} receiveShadow>
+                    <planeGeometry args={[4, 4000]} />
+                    <meshStandardMaterial color="#9ca3af" />
+                </mesh>
+            </group>
         ))}
       </group>
 
+      <RoadMarkings />
       <TrafficLightSystem intersections={CROSS_ROADS_X} stateRef={trafficState} />
       <CityInstances />
       <TreeInstances />

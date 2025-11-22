@@ -12,61 +12,56 @@ interface TrafficLightSystemProps {
 }
 
 export const TrafficLightSystem: React.FC<TrafficLightSystemProps> = ({ intersections, stateRef }) => {
-  // Visual Refs
   const poleRef = useRef<InstancedMesh>(null);
   const housingRef = useRef<InstancedMesh>(null);
-  const lightMainRef = useRef<InstancedMesh>(null); // Lights facing Main Road
-  const lightCrossRef = useRef<InstancedMesh>(null); // Lights facing Cross Road
+  const lightMainRef = useRef<InstancedMesh>(null); 
+  const lightCrossRef = useRef<InstancedMesh>(null); 
 
   const [dummy] = useState(() => new Object3D());
   const timer = useRef(0);
 
-  // Initialize Visuals
   useLayoutEffect(() => {
     if (!poleRef.current || !housingRef.current || !lightMainRef.current || !lightCrossRef.current) return;
 
     let idx = 0;
     intersections.forEach((x) => {
-      // 4 Corners per intersection
-      // Corner 1: x-12, z-12
-      // Corner 2: x+12, z-12
-      // Corner 3: x+12, z+12
-      // Corner 4: x-12, z+12
-      
+      // Update offsets to match sidewalk positions
+      // Main Road Sidewalks are at Z = +/- 22
+      // Cross Road Sidewalks are at X (relative) = +/- 12
       const offsets = [
-        [-12, -12], [12, -12], [12, 12], [-12, 12]
+        [-12, -22], [12, -22], [12, 22], [-12, 22]
       ];
 
       offsets.forEach(([offX, offZ]) => {
-        // POLE
-        dummy.position.set(x + offX, 3, offZ);
+        // Sidewalk Level: 0.55
+        // Pole Height: 6
+        // Center Y = 0.55 + 3 = 3.55
+        dummy.position.set(x + offX, 3.55, offZ);
         dummy.scale.set(1, 1, 1);
         dummy.rotation.set(0, 0, 0);
         dummy.updateMatrix();
         poleRef.current!.setMatrixAt(idx, dummy.matrix);
 
-        // HOUSING (Box on top)
-        dummy.position.set(x + offX, 6, offZ);
+        // Housing Center Y = 0.55 + 6 = 6.55
+        dummy.position.set(x + offX, 6.55, offZ);
         dummy.scale.set(1, 1, 1);
         dummy.updateMatrix();
         housingRef.current!.setMatrixAt(idx, dummy.matrix);
 
-        // LIGHTS
-        // We need lights facing the incoming traffic.
-        // Main Road (X-axis) traffic comes from Left (-X) and Right (+X).
-        // Cross Road (Z-axis) traffic comes from Top (-Z) and Bottom (+Z).
-        
-        // Simplified: Each pole has 2 lights. One facing X, one facing Z.
-        
-        // Main Facing Light (Visible to cars on Main St)
-        // Needs to face +/- X
-        dummy.position.set(x + offX, 6, offZ); 
-        // Rotate to face Z axis (side of box)? No, face X axis.
-        dummy.rotation.set(0, Math.PI/2, 0); 
+        // Light Main (Faces X-axis / Main Road)
+        // Geometry: [0.2, 0.8, 1.1] -> Thin X, Wide Z.
+        // Unrotated, this presents the flat face (YZ plane) to X-axis traffic.
+        // Positioned slightly HIGHER to avoid Z-fighting with Cross light
+        dummy.position.set(x + offX, 6.8, offZ); 
+        dummy.rotation.set(0, 0, 0); 
         dummy.updateMatrix();
         lightMainRef.current!.setMatrixAt(idx, dummy.matrix);
 
-        // Cross Facing Light (Visible to cars on Cross St)
+        // Light Cross (Faces Z-axis / Cross Road)
+        // Geometry: [1.1, 0.8, 0.2] -> Wide X, Thin Z.
+        // Unrotated, this presents the flat face (XY plane) to Z-axis traffic.
+        // Positioned slightly LOWER
+        dummy.position.set(x + offX, 6.3, offZ);
         dummy.rotation.set(0, 0, 0);
         dummy.updateMatrix();
         lightCrossRef.current!.setMatrixAt(idx, dummy.matrix);
@@ -81,11 +76,9 @@ export const TrafficLightSystem: React.FC<TrafficLightSystemProps> = ({ intersec
     lightCrossRef.current.instanceMatrix.needsUpdate = true;
   }, [intersections, dummy]);
 
-  // Logic & Animation Loop
   useFrame((state, delta) => {
     timer.current += delta;
     
-    // Toggle lights every 8 seconds
     if (timer.current > 8) {
       timer.current = 0;
       intersections.forEach(x => {
@@ -93,7 +86,6 @@ export const TrafficLightSystem: React.FC<TrafficLightSystemProps> = ({ intersec
         stateRef.current[x] = current === 'MAIN_GO' ? 'CROSS_GO' : 'MAIN_GO';
       });
       
-      // Update Visuals
       if (lightMainRef.current && lightCrossRef.current) {
         let idx = 0;
         const green = new Color('#22c55e');
@@ -104,7 +96,6 @@ export const TrafficLightSystem: React.FC<TrafficLightSystemProps> = ({ intersec
           const mainColor = phase === 'MAIN_GO' ? green : red;
           const crossColor = phase === 'CROSS_GO' ? green : red;
 
-          // 4 poles per intersection
           for (let i=0; i<4; i++) {
             lightMainRef.current!.setColorAt(idx, mainColor);
             lightCrossRef.current!.setColorAt(idx, crossColor);
@@ -122,28 +113,24 @@ export const TrafficLightSystem: React.FC<TrafficLightSystemProps> = ({ intersec
 
   return (
     <group>
-      {/* Poles */}
       <instancedMesh ref={poleRef} args={[undefined, undefined, count]} castShadow>
         <cylinderGeometry args={[0.3, 0.3, 6]} />
         <meshStandardMaterial color="#333" />
       </instancedMesh>
-
-      {/* Housings */}
       <instancedMesh ref={housingRef} args={[undefined, undefined, count]} castShadow>
         <boxGeometry args={[1, 2, 1]} />
         <meshStandardMaterial color="#111" />
       </instancedMesh>
-
-      {/* Main Road Lights (Faces X) */}
+      
+      {/* Light facing Main Road (X-Axis) - Thin X, Wide Z */}
       <instancedMesh ref={lightMainRef} args={[undefined, undefined, count]}>
-         {/* Thin box acting as the glowing panel */}
-         <boxGeometry args={[0.2, 0.8, 1.1]} />
+         <boxGeometry args={[0.2, 0.6, 1.0]} />
          <meshStandardMaterial emissiveIntensity={3} toneMapped={false} />
       </instancedMesh>
-
-      {/* Cross Road Lights (Faces Z) */}
+      
+      {/* Light facing Cross Road (Z-Axis) - Wide X, Thin Z */}
       <instancedMesh ref={lightCrossRef} args={[undefined, undefined, count]}>
-         <boxGeometry args={[1.1, 0.8, 0.2]} />
+         <boxGeometry args={[1.0, 0.6, 0.2]} />
          <meshStandardMaterial emissiveIntensity={3} toneMapped={false} />
       </instancedMesh>
     </group>
